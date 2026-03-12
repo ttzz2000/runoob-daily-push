@@ -1,0 +1,44 @@
+name: Daily Runoob Push
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily push
+        env:
+          RUNOOB_ROOT_URL: ${{ secrets.RUNOOB_ROOT_URL }}
+          RUNOOB_TOPIC_HINT: ${{ secrets.RUNOOB_TOPIC_HINT }}
+          RUNOOB_MAX_BLOCKS: ${{ secrets.RUNOOB_MAX_BLOCKS }}
+          RUNOOB_TIMEOUT: ${{ secrets.RUNOOB_TIMEOUT }}
+          PUSH_PROVIDER: ${{ secrets.PUSH_PROVIDER }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          BARK_DEVICE_KEY: ${{ secrets.BARK_DEVICE_KEY }}
+          BARK_PUSH_URL: ${{ secrets.BARK_PUSH_URL }}
+          BARK_GROUP: ${{ secrets.BARK_GROUP }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          LLM_SUMMARY_ENABLED: ${{ secrets.LLM_SUMMARY_ENABLED }}
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_TIMEOUT: ${{ secrets.LLM_TIMEOUT }}
+          LLM_SUMMARY_MAX_INPUT_CHARS: ${{ secrets.LLM_SUMMARY_MAX_INPUT_CHARS }}
+        run: python runoob_daily.py
