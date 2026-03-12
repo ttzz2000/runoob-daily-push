@@ -632,7 +632,7 @@ def build_wechat_digest(item: KnowledgePoint) -> str:
 
 
 def build_wechat_title(item: KnowledgePoint, config: WechatMpConfig) -> str:
-    return truncate_text(f"{config.title_prefix}{item.point_title}", 32)
+    return truncate_text(f"{config.title_prefix}{item.point_title}", 64)
 
 
 def build_wechat_html(item: KnowledgePoint, config: WechatMpConfig) -> str:
@@ -706,7 +706,7 @@ def create_wechat_draft(
     endpoint = "https://api.weixin.qq.com/cgi-bin/draft/add"
     article = {
         "title": build_wechat_title(item, config),
-        "author": truncate_text(config.author, 16),
+        "author": truncate_text(config.author, 8),
         "digest": build_wechat_digest(item),
         "content": build_wechat_html(item, config),
         "content_source_url": item.point_url,
