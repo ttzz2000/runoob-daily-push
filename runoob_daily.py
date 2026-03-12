@@ -717,18 +717,45 @@ def create_wechat_draft(
     if not article["author"]:
         article.pop("author")
 
-    response = session.post(
-        endpoint,
-        params={"access_token": access_token},
-        json={"articles": [article]},
-        timeout=session.request_timeout,  # type: ignore[attr-defined]
-    )
-    response.raise_for_status()
-    data = parse_wechat_response(response, "新增草稿")
-    media_id = data.get("media_id")
-    if not media_id:
-        raise ValueError("微信公众号草稿创建成功，但未返回 media_id。")
-    return str(media_id)
+    variants = [article]
+    digestless = dict(article)
+    digestless.pop("digest", None)
+    variants.append(digestless)
+
+    authorless = dict(digestless)
+    authorless.pop("author", None)
+    variants.append(authorless)
+
+    last_error: ValueError | None = None
+    for index, payload_article in enumerate(variants):
+        response = session.post(
+            endpoint,
+            params={"access_token": access_token},
+            json={"articles": [payload_article]},
+            timeout=session.request_timeout,  # type: ignore[attr-defined]
+        )
+        response.raise_for_status()
+        data = response.json()
+        errcode = data.get("errcode", 0)
+        errmsg = str(data.get("errmsg", ""))
+        if errcode in (0, None):
+            media_id = data.get("media_id")
+            if not media_id:
+                raise ValueError("微信公众号草稿创建成功，但未返回 media_id。")
+            if index == 1:
+                print("微信公众号草稿摘要过长，已自动去掉 digest 后重试成功。", file=sys.stderr)
+            if index == 2:
+                print("微信公众号草稿摘要或作者过长，已自动精简字段后重试成功。", file=sys.stderr)
+            return str(media_id)
+
+        last_error = ValueError(f"微信公众号新增草稿失败: {errcode} {errmsg}")
+        if errcode == 45004 and "description size out of limit" in errmsg and index < len(variants) - 1:
+            continue
+        raise last_error
+
+    if last_error is not None:
+        raise last_error
+    raise ValueError("微信公众号新增草稿失败：未知错误。")
 
 
 def submit_wechat_publish(
