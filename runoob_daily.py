@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import os
 import re
 import sys
@@ -47,6 +48,18 @@ class LlmConfig:
     max_input_chars: int
 
 
+@dataclass(frozen=True)
+class WechatMpConfig:
+    app_id: str
+    app_secret: str
+    thumb_media_id: str
+    author: str
+    mode: str
+    title_prefix: str
+    need_open_comment: int
+    only_fans_can_comment: int
+
+
 TRUE_VALUES = {"1", "true", "yes", "on"}
 CARD_LABELS = ("一句话：", "核心点：", "今天试试：")
 
@@ -81,6 +94,18 @@ def env_int(name: str, default: int) -> int:
     if not stripped:
         return default
     return int(stripped)
+
+
+def compact_text(value: str) -> str:
+    return clean_text(value.replace("\n", " "))
+
+
+def truncate_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    if limit <= 1:
+        return value[:limit]
+    return value[: limit - 1].rstrip() + "…"
 
 
 def build_session(timeout: int) -> requests.Session:
@@ -372,6 +397,35 @@ def normalize_card_summary(text: str) -> str:
     return "\n".join(normalized)
 
 
+def resolve_wechat_mp_config() -> WechatMpConfig | None:
+    app_id = os.getenv("WECHAT_APP_ID", "").strip()
+    app_secret = os.getenv("WECHAT_APP_SECRET", "").strip()
+    thumb_media_id = os.getenv("WECHAT_THUMB_MEDIA_ID", "").strip()
+    mode = os.getenv("WECHAT_MP_MODE", "draft").strip().lower() or "draft"
+    author = os.getenv("WECHAT_AUTHOR", "").strip()
+    title_prefix = os.getenv("WECHAT_TITLE_PREFIX", "晨读｜").strip()
+    need_open_comment = env_int("WECHAT_NEED_OPEN_COMMENT", 0)
+    only_fans_can_comment = env_int("WECHAT_ONLY_FANS_CAN_COMMENT", 0)
+
+    if not any((app_id, app_secret, thumb_media_id)):
+        return None
+    if not app_id or not app_secret or not thumb_media_id:
+        raise ValueError("微信公众号配置不完整，至少需要 WECHAT_APP_ID、WECHAT_APP_SECRET、WECHAT_THUMB_MEDIA_ID。")
+    if mode not in {"draft", "publish"}:
+        raise ValueError("WECHAT_MP_MODE 仅支持 draft 或 publish。")
+
+    return WechatMpConfig(
+        app_id=app_id,
+        app_secret=app_secret,
+        thumb_media_id=thumb_media_id,
+        author=author,
+        mode=mode,
+        title_prefix=title_prefix,
+        need_open_comment=1 if need_open_comment else 0,
+        only_fans_can_comment=1 if only_fans_can_comment else 0,
+    )
+
+
 def resolve_llm_config(timeout: int) -> LlmConfig | None:
     if not env_flag("LLM_SUMMARY_ENABLED"):
         return None
@@ -547,6 +601,146 @@ def render_message(item: KnowledgePoint) -> tuple[str, str]:
     return title, body
 
 
+def build_wechat_digest(item: KnowledgePoint) -> str:
+    parts = [strip_known_label(line) for line in item.summary.splitlines() if clean_text(line)]
+    digest = compact_text("；".join(part for part in parts if part))
+    return truncate_text(digest or item.point_title, 120)
+
+
+def build_wechat_title(item: KnowledgePoint, config: WechatMpConfig) -> str:
+    return truncate_text(f"{config.title_prefix}{item.point_title}", 32)
+
+
+def build_wechat_html(item: KnowledgePoint, config: WechatMpConfig) -> str:
+    today = dt.date.today().strftime("%Y-%m-%d")
+    safe_title = html.escape(item.point_title)
+    safe_topic = html.escape(item.tutorial_title)
+    safe_url = html.escape(item.point_url, quote=True)
+    summary_lines = [clean_text(line) for line in item.summary.splitlines() if clean_text(line)]
+
+    paragraphs = [
+        '<section style="font-size:16px;line-height:1.8;color:#222;">',
+        f'<p><strong>日期：</strong>{today}</p>',
+        f'<p><strong>专题：</strong>{safe_topic}</p>',
+        f'<h2 style="margin:1.2em 0 0.6em;font-size:24px;">{safe_title}</h2>',
+    ]
+
+    for line in summary_lines:
+        if "：" in line:
+            label, content = line.split("：", 1)
+            safe_label = html.escape(label)
+            safe_content = html.escape(content)
+            paragraphs.append(f'<p><strong>{safe_label}：</strong>{safe_content}</p>')
+        else:
+            paragraphs.append(f"<p>{html.escape(line)}</p>")
+
+    paragraphs.extend(
+        [
+            '<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">',
+            f'<p><a href="{safe_url}">阅读原文</a></p>',
+            '<p style="color:#888;font-size:14px;">内容来源：菜鸟教程，本文由脚本自动整理生成。</p>',
+            "</section>",
+        ]
+    )
+    return "".join(paragraphs)
+
+
+def parse_wechat_response(response: requests.Response, action: str) -> dict:
+    data = response.json()
+    errcode = data.get("errcode", 0)
+    if errcode not in (0, None):
+        errmsg = data.get("errmsg", "unknown error")
+        raise ValueError(f"微信公众号{action}失败: {errcode} {errmsg}")
+    return data
+
+
+def get_wechat_access_token(session: requests.Session, config: WechatMpConfig) -> str:
+    endpoint = "https://api.weixin.qq.com/cgi-bin/token"
+    response = session.get(
+        endpoint,
+        params={
+            "grant_type": "client_credential",
+            "appid": config.app_id,
+            "secret": config.app_secret,
+        },
+        timeout=session.request_timeout,  # type: ignore[attr-defined]
+    )
+    response.raise_for_status()
+    data = parse_wechat_response(response, "获取 access_token")
+    access_token = data.get("access_token")
+    if not access_token:
+        raise ValueError("微信公众号 access_token 返回为空。")
+    return str(access_token)
+
+
+def create_wechat_draft(
+    session: requests.Session,
+    access_token: str,
+    config: WechatMpConfig,
+    item: KnowledgePoint,
+) -> str:
+    endpoint = "https://api.weixin.qq.com/cgi-bin/draft/add"
+    article = {
+        "title": build_wechat_title(item, config),
+        "author": config.author,
+        "digest": build_wechat_digest(item),
+        "content": build_wechat_html(item, config),
+        "content_source_url": item.point_url,
+        "thumb_media_id": config.thumb_media_id,
+        "need_open_comment": config.need_open_comment,
+        "only_fans_can_comment": config.only_fans_can_comment,
+    }
+    if not article["author"]:
+        article.pop("author")
+
+    response = session.post(
+        endpoint,
+        params={"access_token": access_token},
+        json={"articles": [article]},
+        timeout=session.request_timeout,  # type: ignore[attr-defined]
+    )
+    response.raise_for_status()
+    data = parse_wechat_response(response, "新增草稿")
+    media_id = data.get("media_id")
+    if not media_id:
+        raise ValueError("微信公众号草稿创建成功，但未返回 media_id。")
+    return str(media_id)
+
+
+def submit_wechat_publish(
+    session: requests.Session,
+    access_token: str,
+    media_id: str,
+) -> tuple[str, str]:
+    endpoint = "https://api.weixin.qq.com/cgi-bin/freepublish/submit"
+    response = session.post(
+        endpoint,
+        params={"access_token": access_token},
+        json={"media_id": media_id},
+        timeout=session.request_timeout,  # type: ignore[attr-defined]
+    )
+    response.raise_for_status()
+    data = parse_wechat_response(response, "提交发布")
+    publish_id = str(data.get("publish_id", ""))
+    msg_data_id = str(data.get("msg_data_id", ""))
+    return publish_id, msg_data_id
+
+
+def push_wechat_mp(session: requests.Session, item: KnowledgePoint) -> str:
+    config = resolve_wechat_mp_config()
+    if config is None:
+        raise ValueError("未提供微信公众号配置。")
+
+    access_token = get_wechat_access_token(session, config)
+    media_id = create_wechat_draft(session, access_token, config, item)
+    if config.mode == "draft":
+        return f"推送成功，渠道: wechat_mp（草稿已创建，media_id: {media_id}）"
+
+    publish_id, msg_data_id = submit_wechat_publish(session, access_token, media_id)
+    suffix = f"，msg_data_id: {msg_data_id}" if msg_data_id else ""
+    return f"推送成功，渠道: wechat_mp（发布任务已提交，publish_id: {publish_id}{suffix}）"
+
+
 def push_bark(session: requests.Session, title: str, body: str) -> requests.Response:
     base_url = os.getenv("BARK_PUSH_URL", "").strip()
     device_key = os.getenv("BARK_DEVICE_KEY", "").strip()
@@ -614,20 +808,30 @@ def detect_push_provider() -> str | None:
         return "serverchan"
     if os.getenv("PUSHPLUS_TOKEN"):
         return "pushplus"
+    if resolve_wechat_mp_config() is not None:
+        return "wechat_mp"
     return None
 
 
-def push_message(session: requests.Session, provider: str, title: str, body: str) -> None:
+def push_message(
+    session: requests.Session,
+    provider: str,
+    title: str,
+    body: str,
+    item: KnowledgePoint,
+) -> str:
     provider = provider.lower()
     if provider == "bark":
         push_bark(session, title, body)
-        return
+        return "推送成功，渠道: bark"
     if provider == "serverchan":
         push_serverchan(session, title, body)
-        return
+        return "推送成功，渠道: serverchan"
     if provider == "pushplus":
         push_pushplus(session, title, body)
-        return
+        return "推送成功，渠道: pushplus"
+    if provider == "wechat_mp":
+        return push_wechat_mp(session, item)
     raise ValueError(f"不支持的推送渠道: {provider}")
 
 
@@ -667,7 +871,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-summary",
         action="store_true",
-        help="启用 AI 摘要。需要同时配置 LLM_SUMMARY_ENABLED 和相关 API 环境变量。",
+        help="启用 AI 晨读卡片。需要同时配置 LLM_SUMMARY_ENABLED 和相关 API 环境变量。",
     )
     return parser.parse_args()
 
@@ -710,8 +914,8 @@ def main() -> int:
             print("未检测到推送配置，已输出内容但未发送。", file=sys.stderr)
             return 0
 
-        push_message(session, provider, title, body)
-        print(f"推送成功，渠道: {provider}")
+        status = push_message(session, provider, title, body, item)
+        print(status)
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"执行失败: {exc}", file=sys.stderr)

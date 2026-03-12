@@ -35,6 +35,14 @@ jobs:
           BARK_PUSH_URL: ${{ secrets.BARK_PUSH_URL }}
           BARK_GROUP: ${{ secrets.BARK_GROUP }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
+          WECHAT_THUMB_MEDIA_ID: ${{ secrets.WECHAT_THUMB_MEDIA_ID }}
+          WECHAT_AUTHOR: ${{ secrets.WECHAT_AUTHOR }}
+          WECHAT_MP_MODE: ${{ secrets.WECHAT_MP_MODE }}
+          WECHAT_TITLE_PREFIX: ${{ secrets.WECHAT_TITLE_PREFIX }}
+          WECHAT_NEED_OPEN_COMMENT: ${{ secrets.WECHAT_NEED_OPEN_COMMENT }}
+          WECHAT_ONLY_FANS_CAN_COMMENT: ${{ secrets.WECHAT_ONLY_FANS_CAN_COMMENT }}
           LLM_SUMMARY_ENABLED: ${{ secrets.LLM_SUMMARY_ENABLED }}
           LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}

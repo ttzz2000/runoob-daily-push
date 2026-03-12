@@ -1,6 +1,6 @@
 # 每日菜鸟教程推送
 
-这个项目会每天抓取菜鸟教程的一个知识点，并通过 Bark、Server酱 或 PushPlus 推送到手机。也支持可选的 AI 晨读卡片模式，把正文压缩成更适合通知阅读的三段短卡片。
+这个项目会每天抓取菜鸟教程的一个知识点，并通过 Bark、Server酱、PushPlus 或微信公众号图文推送出去。也支持可选的 AI 晨读卡片模式，把正文压缩成更适合通知阅读的三段短卡片。
 
 ## 运行方式
 
@@ -37,18 +37,26 @@ python runoob_daily.py --dry-run --llm-summary
 
 在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中添加以下 Secrets：
 
-- `PUSH_PROVIDER`：`serverchan`、`bark` 或 `pushplus`
+- `PUSH_PROVIDER`：`serverchan`、`bark`、`pushplus` 或 `wechat_mp`
 - `SERVERCHAN_SENDKEY`：使用 Server酱 时必填
 - `BARK_DEVICE_KEY` 或 `BARK_PUSH_URL`：使用 Bark 时至少填一个
 - `PUSHPLUS_TOKEN`：使用 PushPlus 时必填
+- `WECHAT_APP_ID`：使用微信公众号图文时必填
+- `WECHAT_APP_SECRET`：使用微信公众号图文时必填
+- `WECHAT_THUMB_MEDIA_ID`：使用微信公众号图文时必填，必须是永久封面素材 `media_id`
+- `WECHAT_AUTHOR`：可选，文章作者名
+- `WECHAT_MP_MODE`：可选，`draft` 或 `publish`，默认推荐 `draft`
+- `WECHAT_TITLE_PREFIX`：可选，默认 `晨读｜`
+- `WECHAT_NEED_OPEN_COMMENT`：可选，默认 `0`
+- `WECHAT_ONLY_FANS_CAN_COMMENT`：可选，默认 `0`
 - `RUNOOB_ROOT_URL`：推荐填写，例如 `https://www.runoob.com/python3/python3-tutorial.html`
 - `RUNOOB_TOPIC_HINT`：可选。如果不指定 `RUNOOB_ROOT_URL`，脚本会从首页自动发现教程入口，再用关键词过滤
 - `RUNOOB_MAX_BLOCKS`：可选，默认 `4`
 - `RUNOOB_TIMEOUT`：可选，默认 `20`
 - `LLM_SUMMARY_ENABLED`：可选，填 `1` 时启用 AI 晨读卡片
 - `LLM_API_BASE`：可选，默认 `https://api.openai.com/v1`
-- `LLM_API_KEY`：启用 AI 摘要时必填
-- `LLM_MODEL`：启用 AI 摘要时必填，例如 `gpt-4.1-mini`
+- `LLM_API_KEY`：启用 AI 晨读卡片时必填
+- `LLM_MODEL`：启用 AI 晨读卡片时必填，例如 `gpt-4.1-mini`
 - `LLM_TIMEOUT`：可选，默认 `40`
 - `LLM_SUMMARY_MAX_INPUT_CHARS`：可选，默认 `2800`
 
@@ -59,6 +67,7 @@ python runoob_daily.py --dry-run --llm-summary
 - 通过日期来稳定选择当天内容，不依赖本地状态文件，所以适合 GitHub Actions 这种无状态运行环境。
 - 如果没有检测到推送配置，脚本会打印内容但不会报错退出。
 - 如果启用了 AI 晨读卡片但接口失败，脚本会自动回退到普通摘要，不会中断当天任务。
+- 如果 `PUSH_PROVIDER=wechat_mp`，脚本会先创建公众号图文草稿；当 `WECHAT_MP_MODE=publish` 时，再自动提交发布。
 
 ## AI 晨读卡片接入
 
@@ -69,8 +78,20 @@ python runoob_daily.py --dry-run --llm-summary
 - 开启后，推送会变成三行卡片：`一句话`、`核心点`、`今天试试`。
 - AI 卡片是可选增强层，不配置这些变量时，脚本仍然按原始正文摘录推送。
 
+## 微信公众号图文接入
+
+这个项目支持已认证服务号的“草稿箱 + 发布能力”接口。
+
+- 推荐先用 `WECHAT_MP_MODE=draft`，确认排版和内容没问题后，再切到 `publish`。
+- 你需要在公众号素材库里准备一张封面图，并拿到对应的永久 `media_id`，填入 `WECHAT_THUMB_MEDIA_ID`。
+- 图文里的“阅读原文”会指向当天教程页面。
+- 如果接口返回权限或 IP 限制错误，需要再检查公众号后台的接口权限配置。
+
 ## 推送渠道说明
 
 - Bark 官方项目：<https://github.com/Finb/Bark>
 - Server酱 Turbo：<https://ftqq.com/>
 - PushPlus 文档：<https://www.pushplus.plus/doc/guide/api.html>
+- 微信发布能力：<https://developers.weixin.qq.com/doc/service/guide/product/publish.html>
+- 微信新增草稿：<https://developers.weixin.qq.com/doc/service/api/draftbox/draftmanage/api_draft_add>
+- 微信发布草稿：<https://developers.weixin.qq.com/doc/service/api/public/api_freepublish_submit>
