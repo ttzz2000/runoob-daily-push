@@ -71,6 +71,16 @@ def env_flag(name: str, default: bool = False) -> bool:
     return value.strip().lower() in TRUE_VALUES
 
 
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    if not stripped:
+        return default
+    return int(stripped)
+
+
 def build_session(timeout: int) -> requests.Session:
     session = requests.Session()
     session.headers.update(
@@ -347,8 +357,8 @@ def resolve_llm_config(timeout: int) -> LlmConfig | None:
     api_key = os.getenv("LLM_API_KEY", "").strip()
     model = os.getenv("LLM_MODEL", "").strip()
     api_base = os.getenv("LLM_API_BASE", "https://api.openai.com/v1").strip()
-    llm_timeout = int(os.getenv("LLM_TIMEOUT", str(max(timeout, DEFAULT_TIMEOUT))))
-    max_input_chars = int(os.getenv("LLM_SUMMARY_MAX_INPUT_CHARS", "2800"))
+    llm_timeout = env_int("LLM_TIMEOUT", max(timeout, DEFAULT_TIMEOUT))
+    max_input_chars = env_int("LLM_SUMMARY_MAX_INPUT_CHARS", 2800)
 
     if not api_key or not model or not api_base:
         print("AI 摘要已启用，但 LLM 配置不完整，回退普通摘要。", file=sys.stderr)
@@ -606,13 +616,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-blocks",
         type=int,
-        default=int(os.getenv("RUNOOB_MAX_BLOCKS", "4")),
+        default=env_int("RUNOOB_MAX_BLOCKS", 4),
         help="摘要最多提取多少段正文，默认 4。",
     )
     parser.add_argument(
         "--timeout",
         type=int,
-        default=int(os.getenv("RUNOOB_TIMEOUT", str(DEFAULT_TIMEOUT))),
+        default=env_int("RUNOOB_TIMEOUT", DEFAULT_TIMEOUT),
         help="网络请求超时时间（秒），默认 20。",
     )
     parser.add_argument(
