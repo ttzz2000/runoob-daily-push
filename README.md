@@ -1,6 +1,6 @@
 # 每日菜鸟教程推送
 
-这个项目会每天抓取菜鸟教程的一个知识点，并通过 Bark、Server酱 或 PushPlus 推送到手机。也支持可选的 AI 摘要模式，把正文压缩成更适合通知阅读的短摘要。
+这个项目会每天抓取菜鸟教程的一个知识点，并通过 Bark、Server酱 或 PushPlus 推送到手机。也支持可选的 AI 晨读卡片模式，把正文压缩成更适合通知阅读的三段短卡片。
 
 ## 运行方式
 
@@ -19,7 +19,7 @@ python runoob_daily.py --dry-run
 python runoob_daily.py --dry-run --root-url https://www.runoob.com/python3/python3-tutorial.html
 ```
 
-如果要测试 AI 摘要版：
+如果要测试 AI 晨读卡片版：
 
 ```bash
 set LLM_SUMMARY_ENABLED=1
@@ -45,7 +45,7 @@ python runoob_daily.py --dry-run --llm-summary
 - `RUNOOB_TOPIC_HINT`：可选。如果不指定 `RUNOOB_ROOT_URL`，脚本会从首页自动发现教程入口，再用关键词过滤
 - `RUNOOB_MAX_BLOCKS`：可选，默认 `4`
 - `RUNOOB_TIMEOUT`：可选，默认 `20`
-- `LLM_SUMMARY_ENABLED`：可选，填 `1` 时启用 AI 摘要
+- `LLM_SUMMARY_ENABLED`：可选，填 `1` 时启用 AI 晨读卡片
 - `LLM_API_BASE`：可选，默认 `https://api.openai.com/v1`
 - `LLM_API_KEY`：启用 AI 摘要时必填
 - `LLM_MODEL`：启用 AI 摘要时必填，例如 `gpt-4.1-mini`
@@ -58,15 +58,16 @@ python runoob_daily.py --dry-run --llm-summary
 - 如果没有设置 `RUNOOB_ROOT_URL`，脚本会访问首页并自动识别教程入口。
 - 通过日期来稳定选择当天内容，不依赖本地状态文件，所以适合 GitHub Actions 这种无状态运行环境。
 - 如果没有检测到推送配置，脚本会打印内容但不会报错退出。
-- 如果启用了 AI 摘要但接口失败，脚本会自动回退到普通摘要，不会中断当天任务。
+- 如果启用了 AI 晨读卡片但接口失败，脚本会自动回退到普通摘要，不会中断当天任务。
 
-## AI 摘要接入
+## AI 晨读卡片接入
 
 脚本调用的是 OpenAI 兼容的 `chat/completions` 接口，所以不绑定某一家服务。
 
 - 如果你用 OpenAI，保留默认 `LLM_API_BASE=https://api.openai.com/v1` 即可。
 - 如果你用其他兼容服务，只需要改 `LLM_API_BASE`、`LLM_API_KEY` 和 `LLM_MODEL`。
-- AI 摘要是可选增强层，不配置这些变量时，脚本仍然按原始正文摘录推送。
+- 开启后，推送会变成三行卡片：`一句话`、`核心点`、`今天试试`。
+- AI 卡片是可选增强层，不配置这些变量时，脚本仍然按原始正文摘录推送。
 
 ## 推送渠道说明
 

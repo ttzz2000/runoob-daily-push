@@ -35,6 +35,7 @@ class KnowledgePoint:
     point_url: str
     summary: str
     source_text: str
+    summary_style: str = "plain"
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class LlmConfig:
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+CARD_LABELS = ("一句话：", "核心点：", "今天试试：")
 
 
 def clean_text(value: str) -> str:
@@ -350,6 +352,26 @@ def normalize_generated_text(text: str) -> str:
     return "\n\n".join(paragraphs[:3])
 
 
+def strip_known_label(text: str) -> str:
+    return re.sub(
+        r"^(一句话|核心点|今天试试|今日行动|行动建议|马上试试|应用场景|one line|core point|try today)\s*[:：-]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def normalize_card_summary(text: str) -> str:
+    raw_lines = [clean_text(line.lstrip("-*• ")) for line in text.replace("\r\n", "\n").split("\n")]
+    lines = [strip_known_label(line) for line in raw_lines if clean_text(line)]
+    normalized: list[str] = []
+    for label, line in zip(CARD_LABELS, lines[:3]):
+        if not line:
+            continue
+        normalized.append(f"{label}{line}")
+    return "\n".join(normalized)
+
+
 def resolve_llm_config(timeout: int) -> LlmConfig | None:
     if not env_flag("LLM_SUMMARY_ENABLED"):
         return None
@@ -380,10 +402,17 @@ def summarize_with_llm(
 ) -> str:
     endpoint = f"{config.api_base}/chat/completions"
     prompt = (
-        "你是一个技术教程摘要助手。"
-        "请把给定的教程摘录压缩成适合手机通知阅读的中文摘要。"
-        "要求：100到140字；最多3段；保留核心概念、用途和一个关键注意点；"
-        "不要写空话，不要输出 Markdown 标题。"
+        "你是技术晨读卡片编辑。"
+        "请把给定的教程摘录改写成适合手机通知阅读的中文晨读卡片。"
+        "输出必须严格为 3 行，且只能使用下面 3 个字段名，不要额外解释：\n"
+        "一句话：...\n"
+        "核心点：...\n"
+        "今天试试：...\n"
+        "要求：总字数控制在 80 到 120 字；"
+        "第一行概括这是什么和有什么用；"
+        "第二行提炼最重要的机制、规则或注意点；"
+        "第三行给一个今天就能上手的小动作；"
+        "避免空话、套话、Markdown 标题和编号。"
     )
     payload = {
         "model": config.model,
@@ -420,7 +449,7 @@ def summarize_with_llm(
                 parts.append(part.get("text", ""))
         content = "\n".join(parts)
 
-    summary = normalize_generated_text(str(content))
+    summary = normalize_card_summary(str(content))
     if not summary:
         raise ValueError("LLM 未返回有效摘要。")
     return summary
@@ -443,6 +472,7 @@ def maybe_apply_llm_summary(
             point_url=item.point_url,
             summary=summary,
             source_text=item.source_text,
+            summary_style="card",
         )
     except Exception as exc:  # noqa: BLE001
         print(f"AI 摘要失败，回退普通摘要: {exc}", file=sys.stderr)
@@ -495,16 +525,25 @@ def resolve_today_knowledge(
         point_url=chapter_url,
         summary=summary,
         source_text=source_text,
+        summary_style="plain",
     )
 
 
 def render_message(item: KnowledgePoint) -> tuple[str, str]:
-    title = f"今日知识点：{item.point_title}"
-    body = (
-        f"专题：{item.tutorial_title}\n"
-        f"链接：{item.point_url}\n\n"
-        f"{item.summary}"
-    )
+    title_prefix = "今日晨读" if item.summary_style == "card" else "今日知识点"
+    title = f"{title_prefix}：{item.point_title}"
+    if item.summary_style == "card":
+        body = (
+            f"专题：{item.tutorial_title}\n\n"
+            f"{item.summary}\n\n"
+            f"原文：{item.point_url}"
+        )
+    else:
+        body = (
+            f"专题：{item.tutorial_title}\n"
+            f"原文：{item.point_url}\n\n"
+            f"{item.summary}"
+        )
     return title, body
 
 
