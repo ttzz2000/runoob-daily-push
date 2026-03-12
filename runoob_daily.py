@@ -108,6 +108,29 @@ def truncate_text(value: str, limit: int) -> str:
     return value[: limit - 1].rstrip() + "…"
 
 
+def truncate_utf8_bytes(value: str, limit: int) -> str:
+    if len(value.encode("utf-8")) <= limit:
+        return value
+    if limit <= 0:
+        return ""
+
+    result: list[str] = []
+    used = 0
+    for char in value:
+        size = len(char.encode("utf-8"))
+        if used + size > limit:
+            break
+        result.append(char)
+        used += size
+
+    truncated = "".join(result).rstrip()
+    if truncated != value and len("…".encode("utf-8")) <= limit:
+        while truncated and len((truncated + "…").encode("utf-8")) > limit:
+            truncated = truncated[:-1].rstrip()
+        truncated += "…"
+    return truncated
+
+
 def build_session(timeout: int) -> requests.Session:
     session = requests.Session()
     session.headers.update(
@@ -603,8 +626,9 @@ def render_message(item: KnowledgePoint) -> tuple[str, str]:
 
 def build_wechat_digest(item: KnowledgePoint) -> str:
     parts = [strip_known_label(line) for line in item.summary.splitlines() if clean_text(line)]
-    digest = compact_text("；".join(part for part in parts if part))
-    return truncate_text(digest or item.point_title, 120)
+    digest = compact_text("；".join(part for part in parts[:2] if part))
+    digest = digest or compact_text(item.point_title)
+    return truncate_utf8_bytes(digest, 100)
 
 
 def build_wechat_title(item: KnowledgePoint, config: WechatMpConfig) -> str:
@@ -682,7 +706,7 @@ def create_wechat_draft(
     endpoint = "https://api.weixin.qq.com/cgi-bin/draft/add"
     article = {
         "title": build_wechat_title(item, config),
-        "author": config.author,
+        "author": truncate_text(config.author, 16),
         "digest": build_wechat_digest(item),
         "content": build_wechat_html(item, config),
         "content_source_url": item.point_url,
