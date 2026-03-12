@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import json
 import os
 import re
 import sys
@@ -678,6 +679,25 @@ def parse_wechat_response(response: requests.Response, action: str) -> dict:
     return data
 
 
+def post_wechat_json(
+    session: requests.Session,
+    endpoint: str,
+    *,
+    params: dict[str, str],
+    payload: dict,
+) -> requests.Response:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    response = session.post(
+        endpoint,
+        params=params,
+        data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        timeout=session.request_timeout,  # type: ignore[attr-defined]
+    )
+    response.raise_for_status()
+    return response
+
+
 def get_wechat_access_token(session: requests.Session, config: WechatMpConfig) -> str:
     endpoint = "https://api.weixin.qq.com/cgi-bin/token"
     response = session.get(
@@ -728,13 +748,12 @@ def create_wechat_draft(
 
     last_error: ValueError | None = None
     for index, (payload_article, success_message) in enumerate(variants):
-        response = session.post(
+        response = post_wechat_json(
+            session,
             endpoint,
             params={"access_token": access_token},
-            json={"articles": [payload_article]},
-            timeout=session.request_timeout,  # type: ignore[attr-defined]
+            payload={"articles": [payload_article]},
         )
-        response.raise_for_status()
         data = response.json()
         errcode = data.get("errcode", 0)
         errmsg = str(data.get("errmsg", ""))
@@ -766,13 +785,12 @@ def submit_wechat_publish(
     media_id: str,
 ) -> tuple[str, str]:
     endpoint = "https://api.weixin.qq.com/cgi-bin/freepublish/submit"
-    response = session.post(
+    response = post_wechat_json(
+        session,
         endpoint,
         params={"access_token": access_token},
-        json={"media_id": media_id},
-        timeout=session.request_timeout,  # type: ignore[attr-defined]
+        payload={"media_id": media_id},
     )
-    response.raise_for_status()
     data = parse_wechat_response(response, "提交发布")
     publish_id = str(data.get("publish_id", ""))
     msg_data_id = str(data.get("msg_data_id", ""))
