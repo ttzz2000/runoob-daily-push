@@ -29,9 +29,69 @@ set LLM_MODEL=gpt-4.1-mini
 python runoob_daily.py --dry-run --llm-summary
 ```
 
+### 本机定时运行公众号版本
+
+如果你使用的是微信公众号图文接口，推荐在本机跑定时任务，不要直接依赖 GitHub Actions。
+原因是微信接口通常需要配置 IP 白名单，而 GitHub 托管 runner 的出口 IP 不固定。
+
+1. 复制本地配置模板：
+
+```powershell
+Copy-Item .env.local.example .env.local
+```
+
+2. 打开 `.env.local`，至少填这些值：
+
+```ini
+PUSH_PROVIDER=wechat_mp
+RUNOOB_ROOT_URL=https://www.runoob.com/python3/python3-tutorial.html
+
+WECHAT_APP_ID=你的AppID
+WECHAT_APP_SECRET=你的新AppSecret
+WECHAT_THUMB_MEDIA_ID=你的永久封面media_id
+WECHAT_AUTHOR=你的作者名
+WECHAT_MP_MODE=draft
+WECHAT_TITLE_PREFIX=晨读｜
+```
+
+3. 先手动跑一次本地脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-runoob-daily.ps1
+```
+
+如果只想验证抓取，不真的发文：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-runoob-daily.ps1 -DryRun
+```
+
+4. 先预览将要注册的计划任务命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register-runoob-task.ps1 -TaskName "RunoobDailyWechat" -Time "08:00" -PrintOnly
+```
+
+5. 确认无误后，注册每天 08:00 的本机计划任务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register-runoob-task.ps1 -TaskName "RunoobDailyWechat" -Time "08:00"
+```
+
+6. 任务创建后，可以手动触发一次：
+
+```powershell
+schtasks /Run /TN "RunoobDailyWechat"
+```
+
+日志会写到 `logs/runoob-daily.log`。
+如果你先想只创建公众号草稿，保持 `WECHAT_MP_MODE=draft`；
+确认排版和封面没问题后，再改成 `publish`。
+
 ### GitHub Actions 定时运行
 
 工作流文件已经放在 `.github/workflows/daily-runoob.yml`。
+如果你的 `PUSH_PROVIDER=wechat_mp`，优先使用上一节的本机定时方案；GitHub Actions 更适合 Bark、Server酱、PushPlus 这类不依赖固定出口 IP 的渠道。
 
 默认 Cron 是 `0 0 * * *`，对应中国标准时间每天 `08:00`。GitHub Actions 使用 UTC，调度可能会有几分钟延迟。
 

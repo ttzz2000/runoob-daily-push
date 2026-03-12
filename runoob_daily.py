@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
@@ -16,6 +17,8 @@ from bs4 import BeautifulSoup, Tag
 
 HOME_URL = "https://www.runoob.com/"
 DEFAULT_TIMEOUT = 20
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_LOCAL_ENV_FILE = SCRIPT_DIR / ".env.local"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -95,6 +98,36 @@ def env_int(name: str, default: int) -> int:
     if not stripped:
         return default
     return int(stripped)
+
+
+def strip_wrapping_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def load_env_file(path: Path) -> None:
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = strip_wrapping_quotes(value.strip())
+        os.environ.setdefault(key, value)
+
+
+def detect_env_file_from_argv(argv: list[str]) -> Path | None:
+    for index, arg in enumerate(argv):
+        if arg == "--env-file" and index + 1 < len(argv):
+            return Path(argv[index + 1]).expanduser()
+        if arg.startswith("--env-file="):
+            return Path(arg.split("=", 1)[1]).expanduser()
+    if DEFAULT_LOCAL_ENV_FILE.exists():
+        return DEFAULT_LOCAL_ENV_FILE
+    return None
 
 
 def compact_text(value: str) -> str:
@@ -909,6 +942,10 @@ def push_message(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="抓取菜鸟教程并推送每日知识点。")
     parser.add_argument(
+        "--env-file",
+        help="加载本地环境变量文件，例如 .env.local。显式环境变量优先级更高。",
+    )
+    parser.add_argument(
         "--date",
         help="用于选择内容的日期，格式 YYYY-MM-DD。默认使用今天。",
     )
@@ -954,8 +991,14 @@ def resolve_date(raw_date: str | None) -> dt.date:
 
 
 def main() -> int:
-    args = parse_args()
     try:
+        env_file = detect_env_file_from_argv(sys.argv[1:])
+        if env_file is not None:
+            if not env_file.exists():
+                raise FileNotFoundError(f"环境变量文件不存在: {env_file}")
+            load_env_file(env_file)
+
+        args = parse_args()
         when = resolve_date(args.date)
         session = build_session(timeout=args.timeout)
         if args.llm_summary:
